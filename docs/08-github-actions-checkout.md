@@ -123,6 +123,32 @@ merge-base 就不在 shallow history 裡，`git diff origin/main...HEAD` 會失�
 
 ---
 
+## ⚠️ 已知問題：`filter: blob:none` + Pants `--changed-since`
+
+**不要**在使用 Pants `--changed-since` 的 job 中加 `filter: blob:none`。
+
+```yaml
+# ✗ 有問題 — Pants changed-files 分析需要讀取 blob
+- uses: actions/checkout@v4
+  with:
+    fetch-depth: 0
+    filter: blob:none   # ← 導致 --changed-since 計算出 0 個 targets
+
+# ✓ 正確 — 完整 clone，可靠性最高
+- uses: actions/checkout@v4
+  with:
+    fetch-depth: 0      # 只加這個就夠了
+```
+
+Pants 的 `--changed-since` 在分析 target 是否存在時，會嘗試讀取檔案內容（blob）
+來確認 BUILD 檔案和原始碼。使用 blobless clone 時，部分 blob 無法讀取，
+Pants 會靜默地將這些 target 從 "changed" 清單中排除，導致 0 個 targets 被偵測到。
+
+官方的 [example-golang CI workflow](https://github.com/pantsbuild/example-golang/blob/main/.github/workflows/pants.yaml)
+也沒有使用 `filter: blob:none`，就是因為這個問題。
+
+---
+
 ## 關於 `filter: tree:0`（更激進的選項）
 
 ```yaml

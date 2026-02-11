@@ -16,12 +16,12 @@ jobs:
     if: github.event_name == 'pull_request'
 
     steps:
-      # blobless clone：fetch-depth: 0 取得所有 commit 歷史（算 merge-base 用）
-      # filter: blob:none 跳過檔案內容（不需要），commit history 通常只有幾 MB
+      # fetch-depth: 0：取得完整 commit 歷史，讓 --changed-since 能算 merge-base
+      # 不加 filter: blob:none — Pants 的 changed-files 分析需要讀取檔案 blob，
+      # blobless clone 會導致 Pants 計算出 0 個 changed targets（已知相容性問題）
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          filter: blob:none
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -41,6 +41,24 @@ jobs:
           gha-cache-key: v0
           named-caches-hash: ${{ hashFiles('python-default.lock') }}
           cache-lmdb-store: "true"
+
+      # ── Debug：讓 CI log 直接可見 git 狀態和 Pants targets ──────
+      - name: Debug git & pants state
+        run: |
+          echo "=== HEAD commit ==="
+          git log -1 --oneline
+
+          echo "=== origin/${{ github.base_ref }} ==="
+          git log -1 --oneline origin/${{ github.base_ref }}
+
+          echo "=== git diff --name-only origin/${{ github.base_ref }}...HEAD ==="
+          git diff --name-only origin/${{ github.base_ref }}...HEAD
+
+          echo "=== pants --changed-since list ==="
+          pants --changed-since=origin/${{ github.base_ref }} list 2>&1 || true
+
+          echo "=== pants --changed-since --changed-dependents=transitive list ==="
+          pants --changed-since=origin/${{ github.base_ref }} --changed-dependents=transitive list 2>&1 || true
 
       - name: Show affected targets in PR summary
         run: |
