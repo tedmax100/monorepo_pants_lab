@@ -70,6 +70,22 @@ jobs:
             --changed-dependents=transitive \
             check
 
+      # 只打包受影響的 binary（go_binary / pex_binary）
+      # Pants 會自動跳過不支援 package 的 target（如 go_package、python_sources）
+      - name: Package changed binaries
+        run: |
+          pants \
+            --changed-since=origin/${{ github.base_ref }} \
+            --changed-dependents=transitive \
+            package
+
+      - name: Upload changed binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries-pr-${{ github.sha }}
+          path: dist/
+          if-no-files-found: ignore
+
       - name: Upload Pants log
         uses: actions/upload-artifact@v4
         if: always()
