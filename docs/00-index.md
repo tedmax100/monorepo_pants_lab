@@ -10,6 +10,8 @@
 | [04-python-projects.md](./04-python-projects.md) | Python 專案詳解：FastAPI services、Pydantic models |
 | [05-build-files-explained.md](./05-build-files-explained.md) | 每個 BUILD 檔案的完整解析 |
 | [06-workflow.md](./06-workflow.md) | 日常開發流程、CI/CD 整合 |
+| [07-changed-since.md](./07-changed-since.md) | `--changed-since` 機制、三種改動情境、GitHub Actions 設定 |
+| [08-github-actions-checkout.md](./08-github-actions-checkout.md) | `fetch-depth` 三種策略比較、blobless clone 原理 |
 
 ---
 

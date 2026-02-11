@@ -1,0 +1,154 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+# 三種 checkout 策略的選擇（見下方注解）：
+# A. fetch-depth: 0 + filter: blob:none  → 推薦：全部 commit 歷史，但不抓檔案內容
+# B. fetch-depth: 0                       → 最安全但最慢（小 repo 無所謂）
+# C. 只 fetch base branch 的 tip          → 最快，但有邊緣情況（見注解）
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────
+  # PR：只測試有改動的部分（changed-since）
+  # ─────────────────────────────────────────────────────────────────
+  test-changed:
+    name: Test Changed Targets (PR)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      # ── 策略 A（推薦）: blobless clone ──────────────────────────
+      # fetch-depth: 0  → 抓所有 commit 歷史（算 merge-base 用）
+      # filter: blob:none → 不抓檔案內容（blob），需要時再按需取得
+      # 效果：commit history 通常只有幾 MB，比完整 clone 快 10x 以上
+      - name: Checkout (blobless clone)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          filter: blob:none
+
+      # ── 策略 C（最快，適合 PR 分支不太長的團隊）─────────────────
+      # 如果你的 PR branch 從 main fork 出來不超過幾百個 commit，
+      # 可以用固定 depth 取代 fetch-depth: 0：
+      #
+      # - uses: actions/checkout@v4
+      #   with:
+      #     fetch-depth: 50            # 抓最近 50 個 commit（通常夠用）
+      # - run: |
+      #     # 萬一 merge-base 不在 shallow history 裡，就繼續加深
+      #     git fetch --deepen=100 origin ${{ github.base_ref }} || true
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: false
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache Pants
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pants/setup
+            ~/.cache/pants/named_caches
+          key: pants-${{ runner.os }}-${{ hashFiles('pants.toml') }}
+          restore-keys: pants-${{ runner.os }}-
+
+      - name: Bootstrap Pants
+        run: pants --version
+
+      # 在 PR 的 Summary 頁顯示影響範圍，讓 reviewer 一眼看清楚
+      - name: Show affected targets in PR summary
+        run: |
+          BASE=origin/${{ github.base_ref }}
+
+          echo "## Changed files" >> $GITHUB_STEP_SUMMARY
+          git diff --name-only ${BASE}...HEAD | sed 's/^/- /' >> $GITHUB_STEP_SUMMARY
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Affected Pants targets" >> $GITHUB_STEP_SUMMARY
+          pants \
+            --changed-since=${BASE} \
+            --changed-dependents=transitive \
+            list 2>/dev/null | sed 's/^/- /' >> $GITHUB_STEP_SUMMARY
+
+      - name: Test changed targets (+ transitive dependents)
+        run: |
+          pants \
+            --changed-since=origin/${{ github.base_ref }} \
+            --changed-dependents=transitive \
+            test
+
+      - name: Type check changed targets
+        run: |
+          pants \
+            --changed-since=origin/${{ github.base_ref }} \
+            --changed-dependents=transitive \
+            check
+
+  # ─────────────────────────────────────────────────────────────────
+  # Push to main：完整測試 + 打包所有 binary
+  # main branch 不需要 --changed-since，直接跑全部
+  # ─────────────────────────────────────────────────────────────────
+  test-all:
+    name: Test All & Package (main)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+
+    steps:
+      # push to main 不需要 git history，預設 depth=1 就夠了
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: false
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache Pants
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pants/setup
+            ~/.cache/pants/named_caches
+          key: pants-${{ runner.os }}-${{ hashFiles('pants.toml') }}
+          restore-keys: pants-${{ runner.os }}-
+
+      - name: Bootstrap Pants
+        run: pants --version
+
+      - name: Test all targets
+        run: pants test ::
+
+      - name: Type check all
+        run: pants check ::
+
+      - name: Package all binaries
+        run: pants package ::
+
+      - name: Upload Go binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-binaries
+          path: |
+            dist/go.cmd.userapi/bin
+            dist/go.cmd.orderapi/bin
+
+      - name: Upload Python PEX
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-pex
+          path: dist/**/*.pex
