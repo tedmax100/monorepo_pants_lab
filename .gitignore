@@ -1,0 +1,18 @@
+# Pants
+.pants.d/
+dist/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.mypy_cache/
+.venv/
+
+# Go
+/go/cmd/userapi/userapi
+/go/cmd/orderapi/orderapi
+
+# IDE
+.idea/
+.vscode/

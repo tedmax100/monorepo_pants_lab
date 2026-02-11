@@ -1,0 +1,30 @@
+[GLOBAL]
+pants_version = "2.30.0"
+backend_packages = [
+  # Go support
+  "pants.backend.experimental.go",
+  # Python support
+  "pants.backend.python",
+  "pants.backend.python.lint.black",
+  "pants.backend.python.typecheck.mypy",
+]
+
+[source]
+root_patterns = [
+  "/python/libs",
+  "/python/services",
+]
+
+[python]
+interpreter_constraints = ["==3.11.*"]
+enable_resolves = true
+resolves = { python-default = "python-default.lock" }
+
+[python-bootstrap]
+search_path = ["<PATH>"]
+
+[golang]
+minimum_expected_version = "1.25"
+
+[test]
+use_coverage = false
