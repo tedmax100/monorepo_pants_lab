@@ -10,6 +10,7 @@ type User struct {
 	Email     string    `json:"email"`
 	CreatedAt time.Time `json:"created_at"`
 	Demo      string    `json:"demo,omitempty"`
+	NickName  string    `json:"nick_name,omitempty"`
 }
 
 // Order represents an order in the system.
