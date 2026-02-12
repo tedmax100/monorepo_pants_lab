@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+# CI updates these tags automatically via:
+#   kustomize edit set image <repo>=<repo>:<sha>
+# Replace GITHUB_REPOSITORY_OWNER with your actual GitHub username / org.
+images:
+  - name: ghcr.io/GITHUB_REPOSITORY_OWNER/user-service
+    newTag: latest
+  - name: ghcr.io/GITHUB_REPOSITORY_OWNER/product-service
+    newTag: latest
+  - name: ghcr.io/GITHUB_REPOSITORY_OWNER/userapi
+    newTag: latest
+  - name: ghcr.io/GITHUB_REPOSITORY_OWNER/orderapi
+    newTag: latest

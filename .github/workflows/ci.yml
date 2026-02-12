@@ -172,3 +172,130 @@ jobs:
         with:
           name: pants-log-main
           path: .pants.d/pants.log
+
+  # ─────────────────────────────────────────────────────────────────
+  # Push to main：只 build + push 有異動的 Docker image，更新 k8s manifest
+  #
+  # 前提：
+  #   1. GITHUB_TOKEN 自動有 packages:write 權限（ghcr.io 同一個 org）
+  #   2. deploy/overlays/production/kustomization.yaml 已有 images 欄位
+  #   3. kustomize 已安裝（用 azure/setup-kubectl / kustomize action）
+  # ─────────────────────────────────────────────────────────────────
+  docker-build-deploy:
+    name: Docker Build & Deploy (main)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    needs: test-all  # 只有測試通過才繼續
+
+    permissions:
+      contents: write   # 寫回更新後的 manifest
+      packages: write   # push image 到 ghcr.io
+
+    steps:
+      # fetch-depth: 0 讓 --changed-since 能找到前一個 commit 的 merge-base
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: false
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: pantsbuild/actions/init-pants@v5-scie-pants
+        with:
+          gha-cache-key: v0
+          named-caches-hash: ${{ hashFiles('python-default.lock') }}
+          cache-lmdb-store: "true"
+
+      - name: Install kustomize
+        uses: imranismail/setup-kustomize@v2
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 找出這次 push 裡有異動的 docker_image targets。
+      # github.event.before = 這次 push 之前的 HEAD SHA，是最可靠的 diff 基準。
+      # --changed-dependents=transitive 確保改 lib 也能觸發依賴它的 service 重建。
+      - name: Detect changed docker targets
+        id: detect
+        run: |
+          CHANGED=$(pants \
+            --changed-since=${{ github.event.before }} \
+            --changed-dependents=transitive \
+            filter --target-type=docker_image \
+          )
+          echo "Changed docker targets:"
+          echo "$CHANGED"
+
+          # 輸出給後續 steps 使用（multiline output 寫法）
+          {
+            echo 'targets<<EOF'
+            echo "$CHANGED"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      # pants publish = build image + push to registries configured in pants.toml.
+      # IMAGE_TAG 和 GITHUB_REPOSITORY_OWNER 兩個 env var 會被 Pants 展開用在
+      # docker_image 的 repository / image_tags 欄位（{env.XXX} 插值）。
+      - name: Build & push Docker images
+        if: steps.detect.outputs.targets != ''
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+        run: |
+          TARGETS=$(echo "${{ steps.detect.outputs.targets }}" | tr '\n' ' ')
+          pants publish $TARGETS
+
+      # pants peek 輸出的 JSON 是平層結構，image repository 在 .repository 欄位
+      # （不是 .spec.repository）。
+      # 用 kustomize edit set image 精準替換 production overlay 的 tag，
+      # 完全不影響其他欄位。
+      - name: Update k8s image tags
+        if: steps.detect.outputs.targets != ''
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+        run: |
+          sudo apt-get install -y jq
+
+          TARGETS=$(echo "${{ steps.detect.outputs.targets }}" | tr '\n' ' ')
+
+          # 從 pants peek 取出 repository，再把 {env.XXX} 插值替換成實際值
+          pants peek $TARGETS \
+            | jq -r '.[].repository' \
+            | sed "s|{env.GITHUB_REPOSITORY_OWNER}|${GITHUB_REPOSITORY_OWNER}|g" \
+            | while read REPO; do
+                echo "→ kustomize set image $REPO:$IMAGE_TAG"
+                (cd deploy/overlays/production && kustomize edit set image "$REPO=$REPO:$IMAGE_TAG")
+              done
+
+      # 如果 manifest 有異動，commit 回 repo 讓 ArgoCD 偵測到並同步。
+      # [skip ci] 防止這個 commit 再次觸發 CI 無限迴圈。
+      - name: Commit manifest changes
+        if: steps.detect.outputs.targets != ''
+        run: |
+          git config user.name  "ci-bot"
+          git config user.email "ci-bot@users.noreply.github.com"
+          git add deploy/
+          # 只有真的有 diff 才 commit（避免空 commit 報錯）
+          git diff --staged --quiet || \
+            git commit -m "chore(deploy): update image tags to ${{ github.sha }} [skip ci]" && \
+            git push
+
+      - name: Upload Pants log
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pants-log-docker
+          path: .pants.d/pants.log

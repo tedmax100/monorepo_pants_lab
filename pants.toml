@@ -7,6 +7,8 @@ backend_packages = [
   "pants.backend.python",
   "pants.backend.python.lint.black",
   "pants.backend.python.typecheck.mypy",
+  # Docker support
+  "pants.backend.docker",
 ]
 
 [source]
@@ -28,3 +30,9 @@ minimum_expected_version = "1.25"
 
 [test]
 use_coverage = false
+
+[docker]
+# ghcr = GitHub Container Registry
+# Set GITHUB_REPOSITORY_OWNER env var when building locally:
+#   export GITHUB_REPOSITORY_OWNER=yourname
+registries = { ghcr = { address = "ghcr.io" } }

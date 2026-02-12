@@ -1,0 +1,11 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Add your base Deployment / Service / ConfigMap resources here.
+# Example:
+#   resources:
+#     - user-service-deployment.yaml
+#     - product-service-deployment.yaml
+#     - userapi-deployment.yaml
+#     - orderapi-deployment.yaml
+resources: []
