@@ -254,8 +254,8 @@ jobs:
         run: |
           TARGETS=$(echo "${{ steps.detect.outputs.targets }}" | tr '\n' ' ')
           pants \
-            --docker-build-arg="GITHUB_REPOSITORY_OWNER=${{ github.repository_owner }}" \
-            --docker-build-arg="IMAGE_TAG=${{ github.sha }}" \
+            --docker-build-args="GITHUB_REPOSITORY_OWNER=${{ github.repository_owner }}" \
+            --docker-build-args="IMAGE_TAG=${{ github.sha }}" \
             publish $TARGETS
 
       # pants peek 輸出的 JSON 是平層結構，image repository 在 .repository 欄位
