@@ -10,7 +10,7 @@ from pydantic import BaseModel, EmailStr
 class UserBase(BaseModel):
     name: str
     email: str
-    nickname: str | None = None
+    # nickname: str | None = None
 
 
 class User(UserBase):
