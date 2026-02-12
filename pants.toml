@@ -37,4 +37,13 @@ use_coverage = false
 # For local builds: export GITHUB_REPOSITORY_OWNER=yourname
 registries = { ghcr = { address = "ghcr.io" } }
 # Declare the build arg so Pants reads its value from the env var of the same name.
-build_args = ["GITHUB_REPOSITORY_OWNER", "IMAGE_TAG"]
+# Default values let `pants package ::` work locally without any env vars.
+# CI overrides these with --docker-build-arg="KEY=value" (see ci.yml).
+build_args = [
+  "GITHUB_REPOSITORY_OWNER=local",
+  "IMAGE_TAG=latest",
+]
+# Pass DOCKER_HOST to the docker subprocess so Pants can reach Colima's daemon.
+# Set in your shell profile if not already set:
+#   export DOCKER_HOST="unix://${HOME}/.colima/default/docker.sock"
+env_vars = ["DOCKER_HOST"]

@@ -246,16 +246,17 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       # pants publish = build image + push to registries configured in pants.toml.
-      # IMAGE_TAG 和 GITHUB_REPOSITORY_OWNER 兩個 env var 會被 Pants 展開用在
-      # docker_image 的 repository / image_tags 欄位（{env.XXX} 插值）。
+      # pants.toml 有 build_args 的預設值（local / latest），
+      # 這裡用 --docker-build-arg 覆寫成實際的 owner 和 git SHA。
+      # --docker-build-arg 的優先度高於 pants.toml 的 build_args 設定值。
       - name: Build & push Docker images
         if: steps.detect.outputs.targets != ''
-        env:
-          IMAGE_TAG: ${{ github.sha }}
-          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
         run: |
           TARGETS=$(echo "${{ steps.detect.outputs.targets }}" | tr '\n' ' ')
-          pants publish $TARGETS
+          pants \
+            --docker-build-arg="GITHUB_REPOSITORY_OWNER=${{ github.repository_owner }}" \
+            --docker-build-arg="IMAGE_TAG=${{ github.sha }}" \
+            publish $TARGETS
 
       # pants peek 輸出的 JSON 是平層結構，image repository 在 .repository 欄位
       # （不是 .spec.repository）。
@@ -265,16 +266,17 @@ jobs:
         if: steps.detect.outputs.targets != ''
         env:
           IMAGE_TAG: ${{ github.sha }}
-          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+          OWNER: ${{ github.repository_owner }}
         run: |
           sudo apt-get install -y jq
 
           TARGETS=$(echo "${{ steps.detect.outputs.targets }}" | tr '\n' ' ')
 
-          # 從 pants peek 取出 repository，再把 {build_args.XXX} 插值替換成實際值
+          # pants peek 的 .repository 是未展開的模板字串（含 {build_args.XXX}），
+          # 用 sed 替換成實際值後，再傳給 kustomize。
           pants peek $TARGETS \
             | jq -r '.[].repository' \
-            | sed "s|{build_args.GITHUB_REPOSITORY_OWNER}|${GITHUB_REPOSITORY_OWNER}|g" \
+            | sed "s|{build_args.GITHUB_REPOSITORY_OWNER}|${OWNER}|g" \
             | while read REPO; do
                 echo "→ kustomize set image $REPO:$IMAGE_TAG"
                 (cd deploy/overlays/production && kustomize edit set image "$REPO=$REPO:$IMAGE_TAG")
