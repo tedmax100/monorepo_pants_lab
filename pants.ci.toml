@@ -1,0 +1,22 @@
+# CI-specific Pants settings.
+# Activated via: PANTS_CONFIG_FILES=pants.ci.toml (set in ci.yml)
+# These settings EXTEND pants.toml; no need to repeat unchanged values.
+
+[GLOBAL]
+# Show colours in GitHub Actions log (ANSI codes are rendered correctly).
+colors = true
+
+[stats]
+# Print cache-hit summary at the end of every Pants run so we can track
+# how effective the GHA cache is over time.
+log = true
+
+[test]
+# Enable coverage in CI (kept false in pants.toml for local speed).
+use_coverage = true
+# Retry flaky tests up to 3 times before marking them as failed.
+attempts_default = 3
+
+[coverage-py]
+report = ["xml"]
+global_report = true

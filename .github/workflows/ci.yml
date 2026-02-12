@@ -15,6 +15,10 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
 
+    env:
+      # 啟用 CI 專用設定（colors、stats.log、coverage、retry）
+      PANTS_CONFIG_FILES: pants.ci.toml
+
     steps:
       # fetch-depth: 0：取得完整 commit 歷史，讓 --changed-since 能算 merge-base
       # 不加 filter: blob:none — Pants 的 changed-files 分析需要讀取檔案 blob，
@@ -74,12 +78,13 @@ jobs:
             --changed-dependents=transitive \
             list 2>/dev/null | sed 's/^/- /' >> $GITHUB_STEP_SUMMARY
 
-      - name: Test changed targets
+      # BUILD 檔是否最新 + lint（black）
+      - name: Lint & validate BUILD files
         run: |
           pants \
             --changed-since=origin/${{ github.base_ref }} \
-            --changed-dependents=transitive \
-            test
+            tailor --check update-build-files --check \
+            lint
 
       - name: Type check changed targets
         run: |
@@ -87,6 +92,13 @@ jobs:
             --changed-since=origin/${{ github.base_ref }} \
             --changed-dependents=transitive \
             check
+
+      - name: Test changed targets
+        run: |
+          pants \
+            --changed-since=origin/${{ github.base_ref }} \
+            --changed-dependents=transitive \
+            test
 
       # 只打包受影響的 binary（go_binary / pex_binary）
       # Pants 會自動跳過不支援 package 的 target（如 go_package、python_sources）
@@ -109,7 +121,7 @@ jobs:
         if: always()
         with:
           name: pants-log-pr
-          path: .pants.d/pants.log
+          path: .pants.d/workdir/pants.log
 
   # ─────────────────────────────────────────────────────────────────
   # Push to main：完整測試 + 打包所有 binary
@@ -118,6 +130,9 @@ jobs:
     name: Test All & Package (main)
     runs-on: ubuntu-latest
     if: github.event_name == 'push'
+
+    env:
+      PANTS_CONFIG_FILES: pants.ci.toml
 
     steps:
       # push to main 不需要 diff，預設 depth=1 即可
@@ -140,13 +155,18 @@ jobs:
           named-caches-hash: ${{ hashFiles('python-default.lock') }}
           cache-lmdb-store: "true"
 
-      - name: Test all targets
+      # BUILD 檔是否最新 + lint（black）
+      - name: Lint & validate BUILD files
         run: |
-          pants test '::'
+          pants tailor --check update-build-files --check lint '::'
 
       - name: Type check all
         run: |
           pants check '::'
+
+      - name: Test all targets
+        run: |
+          pants test '::'
 
       # 排除 docker_image：Docker build/push 由 docker-build-deploy job 負責
       - name: Package all binaries
@@ -172,7 +192,7 @@ jobs:
         if: always()
         with:
           name: pants-log-main
-          path: .pants.d/pants.log
+          path: .pants.d/workdir/pants.log
 
   # ─────────────────────────────────────────────────────────────────
   # Push to main：只 build + push 有異動的 Docker image，更新 k8s manifest
@@ -191,6 +211,9 @@ jobs:
     permissions:
       contents: write   # 寫回更新後的 manifest
       packages: write   # push image 到 ghcr.io
+
+    env:
+      PANTS_CONFIG_FILES: pants.ci.toml
 
     steps:
       # fetch-depth: 0 讓 --changed-since 能找到前一個 commit 的 merge-base
@@ -301,4 +324,4 @@ jobs:
         if: always()
         with:
           name: pants-log-docker
-          path: .pants.d/pants.log
+          path: .pants.d/workdir/pants.log
