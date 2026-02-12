@@ -37,4 +37,4 @@ use_coverage = false
 # For local builds: export GITHUB_REPOSITORY_OWNER=yourname
 registries = { ghcr = { address = "ghcr.io" } }
 # Declare the build arg so Pants reads its value from the env var of the same name.
-build_args = ["GITHUB_REPOSITORY_OWNER"]
+build_args = ["GITHUB_REPOSITORY_OWNER", "IMAGE_TAG"]
