@@ -23,12 +23,13 @@ PR Review Progress:
 - [ ] 步驟 1: 準備工作（fetch、status、stash）
 - [ ] 步驟 2: 檢查 PR 狀態和 mergeable
 - [ ] 步驟 3: 切換到 merge result 或 PR branch
-- [ ] 步驟 4: 讀取和分析修改檔案
-- [ ] 步驟 5: 取得準確行號
-- [ ] 步驟 6: 發佈批次 Review
-- [ ] 步驟 7: 發布 diff 範圍外的 review（如需要）
-- [ ] 步驟 8: 完成審查
-- [ ] 步驟 9: 返回原始分支
+- [ ] 步驟 4: 檢查既有 Review Comments（防重複）
+- [ ] 步驟 5: 讀取和分析修改檔案
+- [ ] 步驟 6: 取得準確行號
+- [ ] 步驟 7: 發佈批次 Review
+- [ ] 步驟 8: 發布 diff 範圍外的 review（如需要）
+- [ ] 步驟 9: 完成審查
+- [ ] 步驟 10: 返回原始分支
 ```
 
 ## 詳細步驟
@@ -93,15 +94,42 @@ git diff origin/<baseRefName>...HEAD
 
 ---
 
-### 步驟 4: 讀取和分析修改檔案
+### 步驟 4: 檢查既有 Review Comments（防重複）
 
-使用 Read 工具讀取所有修改檔案，並行調用一次讀取。
+拉取此 PR 已存在的所有 review comments，建立已覆蓋位置清單：
+
+```bash
+# 取得所有 inline review comments（含已解決的）
+gh api repos/OWNER/REPO/pulls/NUMBER/comments \
+  | jq -r '.[] | "\(.path):\(.line // .original_line) \(.user.login): \(.body | split("\n")[0])"'
+```
+
+記錄每筆的 `path + line`（稱為**已佔位置**）。
+
+後續步驟 7 發佈前，跳過 `path+line` 與已佔位置完全相同的 comment。若同一行已有相似主題的評論（關鍵詞重疊），也標記為重複略過，並在審查摘要中說明「已有既有評論，略過」。
+
+---
+
+### 步驟 5: 讀取和分析修改檔案（跳過已有評論的位置）
+
+**先載入專案 guideline：**
+
+使用 Read 工具讀取 `.claude/coding_style_guideline.md`（固定路徑）。
+若檔案不存在，使用內建預設標準（見下方）。
+
+guideline 定義了每個等級的判斷標準：
+- **MUST**：必須修正才能合併
+- **SHOULD**：強烈建議修正
+- **MAY**：可選改進
+- **不予評論**：略過的情況
+
+依 guideline 標準，對每個發現的問題決定等級後，再使用 Read 工具讀取所有修改檔案，並行調用一次讀取。
 
 盡可能使用 LSP 工具獲取型別資訊、引用關係和函數簽名。
 
 分析以下面向：
 - **程式碼正確性**：如函數參數是否完整、型別標註是否正確、有無型別轉換風險
-- **遵循專案規範**：如是否符合專案架構模式、一致性、風格、命名慣例（類別/函數/變數）
+- **遵循專案規範**：如是否符合 guideline 定義的規範、命名慣例
 - **效能影響**：如是否有效能問題或可優化之處
 - **測試涵蓋率**：如是否有對應的測試案例
 - **安全性考量**：如是否有安全漏洞或風險
@@ -110,7 +138,7 @@ git diff origin/<baseRefName>...HEAD
 
 ---
 
-### 步驟 5: 取得準確行號
+### 步驟 6: 取得準確行號
 
 GitHub review comments 需要的是**來源 branch（PR head）的行號**，而非 merge result 的行號。
 
@@ -140,7 +168,7 @@ gh api repos/OWNER/REPO/pulls/NUMBER/files | jq -r '.[N].patch'
 
 ---
 
-### 步驟 6: 發佈批次 Review
+### 步驟 7: 發佈批次 Review
 
 發佈 review：
 
@@ -175,7 +203,7 @@ Badge URL 格式：`https://img.shields.io/badge/<等級>-<顏色>?style=for-the
 
 ---
 
-### 步驟 7: 發布 diff 範圍外的 review
+### 步驟 8: 發布 diff 範圍外的 review
 
 僅在 line comment 無法表達時使用：
 
@@ -188,7 +216,7 @@ EOF
 
 ---
 
-### 步驟 8: 完成審查
+### 步驟 9: 完成審查
 
 提供審查摘要：
 - 總共發佈的 comments 數量
@@ -196,7 +224,7 @@ EOF
 
 ---
 
-### 步驟 9: 返回原始分支
+### 步驟 10: 返回原始分支
 
 ```bash
 git checkout <步驟 1 記錄的原始分支>
