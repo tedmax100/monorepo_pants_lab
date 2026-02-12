@@ -32,7 +32,7 @@ pants package ::
 
 ```
 monorepo_demo/
-├── pants.toml              ← Pants 2.30 設定
+├── pants.toml              ← Pants 2.30 設定（含 Docker backend）
 ├── BUILD                   ← go_mod + python_requirements
 ├── go.mod / go.sum         ← Go 模組
 ├── requirements.txt        ← Python 依賴
@@ -41,17 +41,31 @@ monorepo_demo/
 ├── go/
 │   ├── cmd/
 │   │   ├── userapi/        ← [Go 專案 1] User HTTP API（:8081）
+│   │   │   ├── BUILD       ← go_package + go_binary + docker_image
+│   │   │   └── Dockerfile
 │   │   └── orderapi/       ← [Go 專案 2] Order HTTP API（:8082）
+│   │       ├── BUILD       ← go_package + go_binary + docker_image
+│   │       └── Dockerfile
 │   └── pkg/
 │       ├── httputil/       ← 共享：JSON response 工具
 │       └── models/         ← 共享：User、Order 資料結構
 │
-└── python/
-    ├── services/
-    │   ├── user_service/   ← [Python 專案 1] FastAPI User Service
-    │   └── product_service/← [Python 專案 2] FastAPI Product Service
-    └── libs/
-        └── common/         ← 共享：Pydantic 資料模型
+├── python/
+│   ├── services/
+│   │   ├── user_service/   ← [Python 專案 1] FastAPI User Service
+│   │   │   ├── BUILD       ← python_sources + pex_binary(server) + docker_image
+│   │   │   └── Dockerfile
+│   │   └── product_service/← [Python 專案 2] FastAPI Product Service
+│   │       ├── BUILD       ← python_sources + pex_binary(server) + docker_image
+│   │       └── Dockerfile
+│   └── libs/
+│       └── common/         ← 共享：Pydantic 資料模型
+│
+└── deploy/
+    ├── base/               ← Kustomize base（k8s manifests）
+    └── overlays/
+        └── production/     ← Production overlay，CI 自動更新 image tags
+            └── kustomization.yaml
 ```
 
 ## 技術棧
@@ -60,5 +74,7 @@ monorepo_demo/
 |------|-----------|------|
 | Go 1.25 | 標準 `net/http` | User API、Order API |
 | Python 3.11 | FastAPI + Pydantic v2 | User Service、Product Service |
-| — | Pants 2.30 | 統一建置、測試、打包 |
+| — | Pants 2.30 | 統一建置、測試、打包、Docker build |
 | — | uv（透過 Pants） | Python 依賴解析 |
+| — | Docker + ghcr.io | Container image build & push |
+| — | Kustomize + ArgoCD | GitOps k8s manifest 管理 |

@@ -116,6 +116,31 @@ python/services/product_service:bin
 
 ---
 
+### 情境 D：`docker_image` 也在影響範圍內
+
+`docker_image` target 依賴 `pex_binary:server`（或 `go_binary:bin`）。
+改了服務的程式碼後，`--changed-dependents=transitive` 也會追蹤到 `docker_image`：
+
+```bash
+$ pants \
+    --changed-since=origin/main \
+    --changed-dependents=transitive \
+    filter --target-type=docker_image
+python/services/product_service:docker
+```
+
+CI 的 `docker-build-deploy` job 用這個輸出決定要 rebuild 哪些 image：
+
+```bash
+# 只 rebuild 受影響的 docker_image，不碰其他服務
+pants \
+  --docker-build-args="GITHUB_REPOSITORY_OWNER=myorg" \
+  --docker-build-args="IMAGE_TAG=abc1234" \
+  publish python/services/product_service:docker
+```
+
+---
+
 ## CI 策略：PR vs Push to Main
 
 ```
@@ -128,7 +153,7 @@ python/services/product_service:bin
                           │  fetch-depth: 0（需要完整歷史）             │
                           └─────────────────────────────────────────── ┘
 
-                          ┌─── Push to main ────────────────────────── ┐
+                          ┌─── Push to main（job 1）────────────────── ┐
                           │                                             │
                           │  pants test ::（全部）                      │
                           │  pants check ::                             │
@@ -137,6 +162,17 @@ python/services/product_service:bin
                           │  目的：確認 main 分支永遠是綠的              │
                           │  上傳 artifacts（binaries、PEX）            │
                           └─────────────────────────────────────────── ┘
+
+                          ┌─── Push to main（job 2，needs: test-all）── ┐
+                          │                                              │
+                          │  --changed-since=${{ github.event.before }} │
+                          │  --changed-dependents=transitive             │
+                          │  filter --target-type=docker_image           │
+                          │                                              │
+                          │  目的：只 build + push 有改動的 image        │
+                          │  更新 deploy/ kustomization.yaml            │
+                          │  commit [skip ci] 觸發 ArgoCD 同步          │
+                          └──────────────────────────────────────────── ┘
 ```
 
 ---
@@ -151,15 +187,28 @@ python/services/product_service:bin
                      # Pants 需要完整歷史才能計算 git diff origin/main...HEAD
                      # 如果只有 1 個 commit，diff 就看不到正確的改動範圍
 
-# 2. --changed-since 的 ref 格式
+# 2. PR：--changed-since 用 origin/<base_ref>
 pants --changed-since=origin/${{ github.base_ref }}
 #                              ↑
 #                    在 PR 中，base_ref 是 "main"
 #                    等同於 git diff origin/main...HEAD
 #                    計算從分支 fork 出來後所有的改動
 
-# 3. GitHub Step Summary ── 讓 PR 的 Reviewer 一眼看到影響範圍
-pants --changed-since=... list >> $GITHUB_STEP_SUMMARY
+# 3. Push to main：用 github.event.before 當 diff 基準
+pants --changed-since=${{ github.event.before }}
+#                              ↑
+#                    github.event.before = push 之前的 HEAD SHA
+#                    比 HEAD^ 更可靠（merge commit 情境下也正確）
+
+# 4. 篩出只有 docker_image 的 targets
+pants \
+  --changed-since=${{ github.event.before }} \
+  --changed-dependents=transitive \
+  filter --target-type=docker_image
+# 只輸出 docker_image targets，傳給 pants publish
+
+# 5. GitHub Step Summary ── 讓 PR 的 Reviewer 一眼看到影響範圍
+pants --changed-since=... --changed-dependents=transitive list >> $GITHUB_STEP_SUMMARY
 # 會在 GitHub Actions 頁面顯示受影響的 targets 清單
 ```
 
@@ -257,6 +306,15 @@ pants --changed-since=origin/main --changed-dependents=transitive check
 
 # 只打包受影響的 binary
 pants --changed-since=origin/main --changed-dependents=transitive package
+
+# 找出受影響的 docker_image targets
+pants --changed-since=origin/main --changed-dependents=transitive filter --target-type=docker_image
+
+# Build + push 受影響的 Docker image（本地需要 Docker 執行中）
+pants \
+  --docker-build-args="GITHUB_REPOSITORY_OWNER=myorg" \
+  --docker-build-args="IMAGE_TAG=dev" \
+  publish $(pants --changed-since=origin/main --changed-dependents=transitive filter --target-type=docker_image)
 
 # HEAD = 未 commit 的改動
 pants --changed-since=HEAD --changed-dependents=transitive test
