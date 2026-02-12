@@ -12,11 +12,9 @@ colors = true
 log = true
 
 [test]
-# Enable coverage in CI (kept false in pants.toml for local speed).
-use_coverage = true
 # Retry flaky tests up to 3 times before marking them as failed.
 attempts_default = 3
 
-[coverage-py]
-report = ["xml"]
-global_report = true
+# use_coverage は Python (coverage-py) 専用。Go テストに適用すると
+# Pants が Go の coverage 出力を誤パースして IndexError を起こすため
+# ここでは有効化しない。Python coverage が必要なら pytest backend で別途設定。
