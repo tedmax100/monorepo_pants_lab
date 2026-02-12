@@ -19,7 +19,7 @@ pex_binary(
 
 docker_image(
     name="docker",
-    repository="ghcr.io/{env.GITHUB_REPOSITORY_OWNER}/product-service",
+    repository="ghcr.io/{build_args.GITHUB_REPOSITORY_OWNER}/product-service",
     image_tags=["{env.IMAGE_TAG}"],
     registries=["@ghcr"],
     dependencies=[":server"],

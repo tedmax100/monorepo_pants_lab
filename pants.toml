@@ -33,6 +33,8 @@ use_coverage = false
 
 [docker]
 # ghcr = GitHub Container Registry
-# Set GITHUB_REPOSITORY_OWNER env var when building locally:
-#   export GITHUB_REPOSITORY_OWNER=yourname
+# GITHUB_REPOSITORY_OWNER is auto-set in GitHub Actions.
+# For local builds: export GITHUB_REPOSITORY_OWNER=yourname
 registries = { ghcr = { address = "ghcr.io" } }
+# Declare the build arg so Pants reads its value from the env var of the same name.
+build_args = ["GITHUB_REPOSITORY_OWNER"]
