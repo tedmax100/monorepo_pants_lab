@@ -38,7 +38,7 @@ go_package()
 go_package()   # 同上
 ```
 
-### `go/cmd/userapi/BUILD` — Executable Binary
+### `go/cmd/userapi/BUILD` — Executable Binary + Docker Image
 ```python
 go_package()   # 宣告 package（包含 main.go）
 
@@ -51,12 +51,31 @@ go_binary(
 # 有了 go_binary，才能執行：
 #   pants run go/cmd/userapi:bin
 #   pants package go/cmd/userapi:bin
+
+docker_image(
+    name="docker",
+    repository="ghcr.io/{build_args.GITHUB_REPOSITORY_OWNER}/userapi",
+    image_tags=["{build_args.IMAGE_TAG}"],
+    registries=["@ghcr"],
+    dependencies=[":bin"],
+    # {build_args.XXX}：執行期才展開的佔位符
+    # pants.toml [docker] build_args 有預設值（local / latest），
+    # CI 用 --docker-build-args 覆寫為 github.repository_owner / github.sha
+    # pants publish go/cmd/userapi:docker → build + push to ghcr.io
+)
 ```
 
-### `go/cmd/orderapi/BUILD` — Executable Binary
+### `go/cmd/orderapi/BUILD` — Executable Binary + Docker Image
 ```python
 go_package()
 go_binary(name="bin")
+docker_image(
+    name="docker",
+    repository="ghcr.io/{build_args.GITHUB_REPOSITORY_OWNER}/orderapi",
+    image_tags=["{build_args.IMAGE_TAG}"],
+    registries=["@ghcr"],
+    dependencies=[":bin"],
+)
 ```
 
 ---
@@ -74,7 +93,7 @@ python_tests(name="tests")
 # 自動設定 pytest runner
 ```
 
-### `python/services/user_service/BUILD` — FastAPI Service
+### `python/services/user_service/BUILD` — FastAPI Service + Docker Image
 ```python
 python_sources(name="lib")
 # 宣告 app.py、__init__.py 等原始碼
@@ -92,26 +111,111 @@ python_tests(
 pex_binary(
     name="bin",
     entry_point="app.py",
-    # ↑ 指定打包後的入口點
-    # 完整路徑：user_service/app.py 中的 __main__
-    # pants package 後可直接執行 ./dist/...bin.pex
+    # ↑ 用於本地直接執行：./dist/...bin.pex
+    # app.py 本身沒有呼叫 uvicorn.run()，不適合 Docker 入口點
+)
+
+pex_binary(
+    name="server",
+    entry_point="uvicorn",
+    dependencies=[":lib", "//:reqs#uvicorn"],
+    # ↑ 用於 Docker image
+    # entry_point="uvicorn" → PEX 執行時呼叫 uvicorn CLI
+    # Dockerfile 的 CMD 傳入 "user_service.app:app --host 0.0.0.0 --port 8080"
+    # 打包後放在 dist/python.services.user_service/server.pex
+)
+
+docker_image(
+    name="docker",
+    repository="ghcr.io/{build_args.GITHUB_REPOSITORY_OWNER}/user-service",
+    image_tags=["{build_args.IMAGE_TAG}"],
+    registries=["@ghcr"],
+    dependencies=[":server"],
+    # Dockerfile 裡 COPY python.services.user_service/server.pex /app/server.pex
+    # 注意路徑格式：dist/ 下的 dotted path（斜線 → 點）
 )
 ```
 
-### `python/services/product_service/BUILD` — FastAPI Service
+### `python/services/product_service/BUILD` — FastAPI Service + Docker Image
 ```python
 python_sources(name="lib")
 
 python_tests(
     name="tests",
-    dependencies=["//:reqs#httpx"],  # 同樣需要手動宣告
+    dependencies=["//:reqs#httpx"],
 )
 
+pex_binary(name="bin", entry_point="app.py")
+
 pex_binary(
-    name="bin",
-    entry_point="app.py",
+    name="server",
+    entry_point="uvicorn",
+    dependencies=[":lib", "//:reqs#uvicorn"],
+)
+
+docker_image(
+    name="docker",
+    repository="ghcr.io/{build_args.GITHUB_REPOSITORY_OWNER}/product-service",
+    image_tags=["{build_args.IMAGE_TAG}"],
+    registries=["@ghcr"],
+    dependencies=[":server"],
 )
 ```
+
+---
+
+## `docker_image` 關鍵知識
+
+### `{build_args.XXX}` 插值
+
+`docker_image` 的 `repository` 和 `image_tags` 欄位支援 `{build_args.XXX}` 佔位符，**不支援** `{env.XXX}`。
+
+```toml
+# pants.toml — 提供預設值，讓本地 build 不會出錯
+[docker]
+registries = { ghcr = { address = "ghcr.io" } }
+build_args = [
+    "GITHUB_REPOSITORY_OWNER=local",   # 預設值
+    "IMAGE_TAG=latest",
+]
+env_vars = ["DOCKER_HOST"]   # 讓 Colima / 遠端 Docker 的 socket 能被找到
+```
+
+CI 用 `--docker-build-args` 覆寫（注意是複數）：
+```bash
+pants \
+  --docker-build-args="GITHUB_REPOSITORY_OWNER=${{ github.repository_owner }}" \
+  --docker-build-args="IMAGE_TAG=${{ github.sha }}" \
+  publish go/cmd/userapi:docker
+```
+
+### Dockerfile 的 COPY 路徑格式
+
+Pants 把 artifact 放在 `dist/` 下，路徑以 **點** 分隔（對應目錄層級）：
+
+```
+dist/
+  go.cmd.userapi/bin            ← go/cmd/userapi:bin 的輸出
+  go.cmd.orderapi/bin
+  python.services.user_service/server.pex    ← pex_binary(name="server")
+  python.services.product_service/server.pex
+```
+
+Dockerfile 的 `COPY` 路徑等於去掉 `dist/` 前綴：
+```dockerfile
+# Go 服務
+COPY go.cmd.userapi/bin /usr/local/bin/userapi
+
+# Python 服務
+COPY python.services.user_service/server.pex /app/server.pex
+```
+
+### `pants publish` vs `pants package`
+
+| 指令 | 效果 |
+|------|------|
+| `pants package go/cmd/userapi:docker` | 只在本地 build image（不 push） |
+| `pants publish go/cmd/userapi:docker` | build + push 到 registries |
 
 ---
 

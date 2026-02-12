@@ -124,14 +124,36 @@ pants test go/cmd/notificationapi:
 # 1. 建立目錄和檔案
 mkdir -p python/services/analytics_service
 
-# 2. 建立 BUILD
+# 2. 建立 BUILD（含 Docker image target）
 cat > python/services/analytics_service/BUILD << 'EOF'
 python_sources(name="lib")
 python_tests(name="tests")
 pex_binary(name="bin", entry_point="app.py")
+pex_binary(
+    name="server",
+    entry_point="uvicorn",
+    dependencies=[":lib", "//:reqs#uvicorn"],
+)
+docker_image(
+    name="docker",
+    repository="ghcr.io/{build_args.GITHUB_REPOSITORY_OWNER}/analytics-service",
+    image_tags=["{build_args.IMAGE_TAG}"],
+    registries=["@ghcr"],
+    dependencies=[":server"],
+)
 EOF
 
-# 3. 建立 app.py（可以 import common.models）
+# 3. 建立 Dockerfile（COPY 路徑用 dotted format）
+cat > python/services/analytics_service/Dockerfile << 'EOF'
+FROM python:3.11-slim
+WORKDIR /app
+COPY python.services.analytics_service/server.pex /app/server.pex
+EXPOSE 8080
+ENTRYPOINT ["python3", "/app/server.pex"]
+CMD ["analytics_service.app:app", "--host", "0.0.0.0", "--port", "8080"]
+EOF
+
+# 4. 建立 app.py（可以 import common.models）
 ```
 
 ---
@@ -151,53 +173,82 @@ git add requirements.txt python-default.lock
 
 ---
 
-## CI/CD 整合範例
+## CI/CD 整合
+
+實際的 `.github/workflows/ci.yml` 包含三個 job：
+
+```
+事件                  觸發的 job
+──────────────────────────────────────────────────
+pull_request      →   test-changed（只跑受影響的部分）
+push to main      →   test-all（全部測試 + 打包）
+                  →   docker-build-deploy（build + push 有改動的 image）
+```
+
+### Job 1：`test-changed`（PR 快速回饋）
 
 ```yaml
-# .github/workflows/ci.yml
-name: CI
+- uses: actions/checkout@v4
+  with:
+    fetch-depth: 0   # 必須！Pants 需要完整歷史計算 merge-base
 
-on: [push, pull_request]
+- name: Test changed targets
+  run: |
+    pants \
+      --changed-since=origin/${{ github.base_ref }} \
+      --changed-dependents=transitive \
+      test
 
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+- name: Package changed binaries
+  run: |
+    pants \
+      --changed-since=origin/${{ github.base_ref }} \
+      --changed-dependents=transitive \
+      package
+```
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.25'
+### Job 2：`test-all`（push to main 完整驗證）
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+```yaml
+- name: Test all targets
+  run: pants test '::'
 
-      - name: Bootstrap Pants
-        run: pants --version
+- name: Package all binaries
+  run: pants package '::'
+```
 
-      - name: Run all tests
-        run: pants test ::
+### Job 3：`docker-build-deploy`（push to main，needs: test-all）
 
-      - name: Type check
-        run: pants check ::
+```yaml
+- name: Detect changed docker targets
+  id: detect
+  run: |
+    CHANGED=$(pants \
+      --changed-since=${{ github.event.before }} \
+      --changed-dependents=transitive \
+      filter --target-type=docker_image \
+    )
+    # github.event.before = push 之前的 HEAD SHA（最可靠的 diff 基準）
 
-      - name: Package all binaries
-        run: pants package ::
+- name: Build & push Docker images
+  if: steps.detect.outputs.targets != ''
+  run: |
+    pants \
+      --docker-build-args="GITHUB_REPOSITORY_OWNER=${{ github.repository_owner }}" \
+      --docker-build-args="IMAGE_TAG=${{ github.sha }}" \
+      publish $TARGETS
+    # pants publish = build image + push to ghcr.io
 
-  # 只測試有改動的部分（Pull Request 時更快）
-  changed-test:
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # 需要完整歷史來計算 diff
+- name: Update k8s image tags
+  run: |
+    # kustomize edit set image 精準更新 production overlay 的 tag
+    (cd deploy/overlays/production && kustomize edit set image "$REPO=$REPO:$IMAGE_TAG")
 
-      - name: Test changed targets only
-        run: pants --changed-since=origin/main --changed-dependees=transitive test
+- name: Commit manifest changes
+  run: |
+    git commit -m "chore(deploy): update image tags to $SHA [skip ci]"
+    git push
+    # [skip ci] 防止無限迴圈觸發 CI
 ```
 
 ---
