@@ -18,7 +18,7 @@ images:
   newTag: latest
 - name: ghcr.io/tedmax100/product-service
   newName: ghcr.io/tedmax100/product-service
-  newTag: 132bdac1c0379301862b0499bf633b1a03f81d05
+  newTag: 09caebff2b95b27be00e837ae7e7b3d004989f00
 - name: ghcr.io/tedmax100/user-service
   newName: ghcr.io/tedmax100/user-service
   newTag: 132bdac1c0379301862b0499bf633b1a03f81d05
