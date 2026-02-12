@@ -14,7 +14,7 @@ import (
 
 var users = []models.User{
 	{ID: "u-1", Name: "Alice", Email: "alice@example.com", CreatedAt: time.Now()},
-	{ID: "u-2", Name: "Bob_test", Email: "bob@example.com", CreatedAt: time.Now()},
+	{ID: "u-2", Name: "Bob", Email: "bob@example.com", CreatedAt: time.Now()},
 }
 
 func handleListUsers(w http.ResponseWriter, r *http.Request) {
