@@ -148,9 +148,10 @@ jobs:
         run: |
           pants check '::'
 
+      # 排除 docker_image：Docker build/push 由 docker-build-deploy job 負責
       - name: Package all binaries
         run: |
-          pants package '::'
+          pants package --filter-target-type='-docker_image' '::'
 
       - name: Upload Go binaries
         uses: actions/upload-artifact@v4
