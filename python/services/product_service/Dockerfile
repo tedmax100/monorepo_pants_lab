@@ -1,12 +1,12 @@
 # Build context root = repository root (Pants sets this automatically).
-# Pants places the PEX at the address path:
-#   python/services/product_service/server.pex
+# Pants places the PEX at address path (/ → . in directory name):
+#   python.services.product_service/server.pex
 FROM python:3.11-slim
 
 WORKDIR /app
 
 # Copy the self-contained PEX (includes FastAPI, uvicorn, pydantic, and app code)
-COPY python/services/product_service/server.pex /app/server.pex
+COPY python.services.product_service/server.pex /app/server.pex
 
 EXPOSE 8080
 
