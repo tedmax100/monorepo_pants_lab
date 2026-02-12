@@ -163,9 +163,9 @@ EOF
 ```
 
 Badge URL 格式：`https://img.shields.io/badge/<等級>-<顏色>?style=for-the-badge`
-- 嚴重問題 → red
-- 需要改進 → orange
-- 建議優化 → blue
+- 嚴重問題 → MUST (red)
+- 需要改進 → SHOULD (orange)
+- 建議優化 → MAY (blue)
 
 關鍵技術細節：
 - `commit_id` 使用步驟 2 的 `headRefOid`（不是 `baseRefOid`）
