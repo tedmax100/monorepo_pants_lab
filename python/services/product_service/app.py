@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException
 
 from common.models import HealthResponse, Product, ProductBase
 
-app = FastAPI(title="Product Service", version="0.1.0")
+app = FastAPI(title="Product Service", version="0.2.0")
 
 # In-memory store
 _products: dict[str, Product] = {}
