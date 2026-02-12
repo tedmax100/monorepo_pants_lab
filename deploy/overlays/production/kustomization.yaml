@@ -22,3 +22,6 @@ images:
 - name: ghcr.io/tedmax100/user-service
   newName: ghcr.io/tedmax100/user-service
   newTag: 132bdac1c0379301862b0499bf633b1a03f81d05
+- name: ghcr.io/tedmax100/userapi
+  newName: ghcr.io/tedmax100/userapi
+  newTag: 60b60ea2fdd03211c66d03d1776e4577f6556587
