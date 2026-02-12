@@ -27,6 +27,8 @@ search_path = ["<PATH>"]
 
 [golang]
 minimum_expected_version = "1.25"
+# 明確指定只從 PATH 找 go binary，避免 Pants 把專案根目錄的 go/ 資料夾誤當成 go 執行檔。
+go_search_paths = ["/usr/local/go/bin", "<PATH>"]
 
 [test]
 use_coverage = false
